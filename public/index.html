@@ -1,30 +1,5 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Live Bus Tracker</title>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <style>
-    body { margin: 0; padding: 0; }
-    #mapid { height: 100vh; width: 100vw; }
-    #find-bus-btn {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        z-index: 1000;
-        padding: 8px 12px;
-        font-size: 16px;
-        cursor: pointer;
-    }
-  </style>
-</head>
-<body>
-  <div id="mapid"></div>
-  <button id="find-bus-btn" style="position: absolute; top: 10px; right: 10px; z-index: 1000;">Find My Bus</button>
-
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
     var mymap = L.map('mapid').setView([12.9716, 77.5946], 13);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -32,41 +7,65 @@
     }).addTo(mymap);
 
     var busMarker = null;
+    var currentLatLng = null;
+    var nextLatLng = null;
+    var stepCount = 0;
+    var animationInterval = null;
 
-    // Optional: Use this to change the marker to a bus icon instead of the default blue pin
-    /*
-    var busIcon = L.icon({
-        iconUrl: 'https://cdn-icons-png.flaticon.com/512/32/32223.png',
-        iconSize: [38, 38],
-        iconAnchor: [19, 38],
-        popupAnchor: [0, -38]
-    });
-    */
-
-    function updateBusLocation() {
+    function getBusLocation() {
         fetch('/get_locations')
             .then(response => response.json())
             .then(data => {
                 if (data['bus-01']) {
-                    const busLocation = new L.LatLng(data['bus-01'].lat, data['bus-01'].lon);
-                    const busName = data['bus-01'].busName;
-
+                    const busLocationData = data['bus-01'];
+                    const newLatLng = new L.LatLng(busLocationData.lat, busLocationData.lon);
+                    
                     if (busMarker) {
-                        busMarker.setLatLng(busLocation);
-                        busMarker.getPopup().setContent(busName + " is here!");
+                        // Start animation if the location has changed
+                        if (!currentLatLng || !currentLatLng.equals(newLatLng)) {
+                            currentLatLng = busMarker.getLatLng();
+                            nextLatLng = newLatLng;
+                            stepCount = 0;
+                            // Clear any existing animation interval
+                            if (animationInterval) clearInterval(animationInterval);
+                            startAnimation();
+                        }
                     } else {
-                        // To use the bus icon, change L.marker(busLocation) to L.marker(busLocation, {icon: busIcon})
-                        busMarker = L.marker(busLocation).addTo(mymap)
-                            .bindPopup(busName + " is here!")
+                        // First time, just place the marker
+                        busMarker = L.marker(newLatLng).addTo(mymap)
+                            .bindPopup(busLocationData.busName + " is here!")
                             .openPopup();
+                        mymap.setView(newLatLng, mymap.getZoom());
+                        currentLatLng = newLatLng;
                     }
-                    mymap.setView(busLocation, mymap.getZoom());
                 }
             })
             .catch(error => console.error('Error fetching location:', error));
     }
 
-    setInterval(updateBusLocation, 5000);
+    function startAnimation() {
+        const totalSteps = 100; // Number of small steps to animate
+        const animationDuration = 5000; // 5 seconds (5000ms)
+        const stepTime = animationDuration / totalSteps;
+
+        animationInterval = setInterval(() => {
+            if (stepCount >= totalSteps || !currentLatLng || !nextLatLng) {
+                clearInterval(animationInterval);
+                return;
+            }
+
+            const latDiff = nextLatLng.lat - currentLatLng.lat;
+            const lngDiff = nextLatLng.lng - currentLatLng.lng;
+            const newLat = currentLatLng.lat + (latDiff * (stepCount / totalSteps));
+            const newLng = currentLatLng.lng + (lngDiff * (stepCount / totalSteps));
+
+            busMarker.setLatLng(new L.LatLng(newLat, newLng));
+            stepCount++;
+        }, stepTime);
+    }
+
+    // Check for new bus location every 5 seconds
+    setInterval(getBusLocation, 5000);
 
     // Code for the "Find My Bus" button
     document.getElementById('find-bus-btn').addEventListener('click', function() {
@@ -82,6 +81,4 @@
             })
             .catch(error => console.error('Error finding bus:', error));
     });
-  </script>
-</body>
-</html>
+</script>
