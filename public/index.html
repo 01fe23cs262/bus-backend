@@ -1,1 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Live Bus Tracker (Software-Only)</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { margin: 0; padding: 0; }
+    #mapid { height: 100vh; width: 100vw; }
+  </style>
+</head>
+<body>
+  <div id="mapid"></div>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    var mymap = L.map('mapid').setView([12.9716, 77.5946], 13);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(mymap);
+
+    var busMarker = null;
+
+    function updateBusLocation() {
+        fetch('/get_locations')
+            .then(response => response.json())
+            .then(data => {
+                if (data['bus-01']) {
+                    const { lat, lon } = data['bus-01'];
+                    const busLocation = new L.LatLng(lat, lon);
+                    
+                    if (busMarker) {
+                        busMarker.setLatLng(busLocation);
+                    } else {
+                        busMarker = L.marker(busLocation).addTo(mymap)
+                            .bindPopup("Bus-01 is here!")
+                            .openPopup();
+                    }
+                    mymap.setView(busLocation, mymap.getZoom());
+                }
+            })
+            .catch(error => console.error('Error fetching location:', error));
+    }
+
+    setInterval(updateBusLocation, 5000);
+  </script>
+</body>
+</html>
