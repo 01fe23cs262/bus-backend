@@ -1,17 +1,27 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Live Bus Tracker (Software-Only)</title>
+  <title>Live Bus Tracker</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     body { margin: 0; padding: 0; }
     #mapid { height: 100vh; width: 100vw; }
+    #find-bus-btn {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 1000;
+        padding: 8px 12px;
+        font-size: 16px;
+        cursor: pointer;
+    }
   </style>
 </head>
 <body>
   <div id="mapid"></div>
+  <button id="find-bus-btn">Find My Bus</button>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
@@ -23,19 +33,31 @@
 
     var busMarker = null;
 
+    // Optional: Use this to change the marker to a bus icon instead of the default blue pin
+    /*
+    var busIcon = L.icon({
+        iconUrl: 'https://cdn-icons-png.flaticon.com/512/32/32223.png',
+        iconSize: [38, 38],
+        iconAnchor: [19, 38],
+        popupAnchor: [0, -38]
+    });
+    */
+
     function updateBusLocation() {
         fetch('/get_locations')
             .then(response => response.json())
             .then(data => {
                 if (data['bus-01']) {
-                    const { lat, lon } = data['bus-01'];
-                    const busLocation = new L.LatLng(lat, lon);
-                    
+                    const busLocation = new L.LatLng(data['bus-01'].lat, data['bus-01'].lon);
+                    const busName = data['bus-01'].busName;
+
                     if (busMarker) {
                         busMarker.setLatLng(busLocation);
+                        busMarker.getPopup().setContent(busName + " is here!");
                     } else {
+                        // To use the bus icon, change L.marker(busLocation) to L.marker(busLocation, {icon: busIcon})
                         busMarker = L.marker(busLocation).addTo(mymap)
-                            .bindPopup("Bus-01 is here!")
+                            .bindPopup(busName + " is here!")
                             .openPopup();
                     }
                     mymap.setView(busLocation, mymap.getZoom());
@@ -45,6 +67,21 @@
     }
 
     setInterval(updateBusLocation, 5000);
+
+    // Code for the "Find My Bus" button
+    document.getElementById('find-bus-btn').addEventListener('click', function() {
+        fetch('/get_locations')
+            .then(response => response.json())
+            .then(data => {
+                if (data['bus-01']) {
+                    var busLocation = [data['bus-01'].lat, data['bus-01'].lon];
+                    mymap.setView(busLocation, 15);
+                } else {
+                    alert("Bus not found. Make sure the simulator is running!");
+                }
+            })
+            .catch(error => console.error('Error finding bus:', error));
+    });
   </script>
 </body>
 </html>
