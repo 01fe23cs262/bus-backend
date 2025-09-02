@@ -1,4 +1,4 @@
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"></script>
 <script>
     var mymap = L.map('mapid').setView([12.9716, 77.5946], 13);
 
@@ -9,8 +9,7 @@
     var busMarker = null;
     var currentLatLng = null;
     var nextLatLng = null;
-    var stepCount = 0;
-    var animationInterval = null;
+    var animationStartTime = null;
 
     function getBusLocation() {
         fetch('/get_locations')
@@ -19,16 +18,14 @@
                 if (data['bus-01']) {
                     const busLocationData = data['bus-01'];
                     const newLatLng = new L.LatLng(busLocationData.lat, busLocationData.lon);
-                    
+
                     if (busMarker) {
-                        // Start animation if the location has changed
+                        // If the location has changed, start a new smooth animation
                         if (!currentLatLng || !currentLatLng.equals(newLatLng)) {
                             currentLatLng = busMarker.getLatLng();
                             nextLatLng = newLatLng;
-                            stepCount = 0;
-                            // Clear any existing animation interval
-                            if (animationInterval) clearInterval(animationInterval);
-                            startAnimation();
+                            animationStartTime = performance.now(); // Start the timer
+                            requestAnimationFrame(animateBus); // Start the animation loop
                         }
                     } else {
                         // First time, just place the marker
@@ -43,25 +40,25 @@
             .catch(error => console.error('Error fetching location:', error));
     }
 
-    function startAnimation() {
-        const totalSteps = 100; // Number of small steps to animate
-        const animationDuration = 5000; // 5 seconds (5000ms)
-        const stepTime = animationDuration / totalSteps;
+    function animateBus(timestamp) {
+        if (!animationStartTime) animationStartTime = timestamp;
 
-        animationInterval = setInterval(() => {
-            if (stepCount >= totalSteps || !currentLatLng || !nextLatLng) {
-                clearInterval(animationInterval);
-                return;
-            }
+        const elapsedTime = timestamp - animationStartTime;
+        const animationDuration = 5000; // 5 seconds in milliseconds
 
-            const latDiff = nextLatLng.lat - currentLatLng.lat;
-            const lngDiff = nextLatLng.lng - currentLatLng.lng;
-            const newLat = currentLatLng.lat + (latDiff * (stepCount / totalSteps));
-            const newLng = currentLatLng.lng + (lngDiff * (stepCount / totalSteps));
+        // Calculate the progress of the animation (0 to 1)
+        const progress = Math.min(elapsedTime / animationDuration, 1);
 
-            busMarker.setLatLng(new L.LatLng(newLat, newLng));
-            stepCount++;
-        }, stepTime);
+        // Interpolate the latitude and longitude
+        const newLat = currentLatLng.lat + (nextLatLng.lat - currentLatLng.lat) * progress;
+        const newLng = currentLatLng.lng + (nextLatLng.lng - currentLatLng.lng) * progress;
+
+        busMarker.setLatLng(new L.LatLng(newLat, newLng));
+
+        // If animation is not complete, request the next frame
+        if (progress < 1) {
+            requestAnimationFrame(animateBus);
+        }
     }
 
     // Check for new bus location every 5 seconds
