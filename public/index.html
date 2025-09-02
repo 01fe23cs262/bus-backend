@@ -17,24 +17,87 @@
         font-size: 16px;
         cursor: pointer;
     }
+    .pulsing-icon {
+        border-radius: 50%;
+        animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.4); }
+        70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+    }
+    #eta-dashboard {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        z-index: 1000;
+        background-color: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        font-family: sans-serif;
+    }
+    .eta-title { font-size: 18px; font-weight: bold; margin-bottom: 5px; }
+    .eta-value { font-size: 24px; color: #007bff; font-weight: bold; }
+    .eta-label { font-size: 14px; color: #555; }
   </style>
 </head>
 <body>
   <div id="mapid"></div>
   <button id="find-bus-btn">Find My Bus</button>
+  <div id="eta-dashboard" style="display: none;">
+    <div class="eta-title">Next Stop: <span id="next-stop-name"></span></div>
+    <div><span id="eta-value" class="eta-value"></span> <span class="eta-label">min</span></div>
+    <div class="eta-label">Distance: <span id="distance-value"></span> m</div>
+  </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-rotatedmarker@0.2.0/leaflet.rotatedMarker.js"></script>
+
   <script>
     var mymap = L.map('mapid').setView([12.9716, 77.5946], 13);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    // Add a traffic map layer (You might need a free API key from a provider like Thunderforest)
+    L.tileLayer('https://tile.thunderforest.com/transport/{z}/{x}/{y}.png?apikey={API_KEY}', {
+        attribution: '&copy; <a href="http://www.thunderforest.com/">Thunderforest</a>, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(mymap);
+
+    // List of official bus stops for markers
+    var busStops = [
+        {name: "Kempegowda Bus Stand", lat: 12.9716, lon: 77.5946},
+        {name: "Corporation Circle", lat: 12.9685, lon: 77.6053},
+        {name: "Richmond Circle", lat: 12.9658, lon: 77.6111},
+        {name: "Shantinagar", lat: 12.9592, lon: 77.6259},
+        {name: "Domlur Flyover", lat: 12.9507, lon: 77.6366}
+    ];
+
+    // Add static markers for each bus stop
+    var stopIcon = L.icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34]
+    });
+    var stopMarkers = {};
+    busStops.forEach(stop => {
+        stopMarkers[stop.name] = L.marker([stop.lat, stop.lon], {icon: stopIcon, className: 'pulsing-icon'})
+            .addTo(mymap)
+            .bindPopup(stop.name);
+    });
+
+    var busIcon = L.icon({
+        iconUrl: 'https://cdn-icons-png.flaticon.com/512/32/32223.png',
+        iconSize: [38, 38],
+        iconAnchor: [19, 38],
+        popupAnchor: [0, -38]
+    });
 
     var busMarker = null;
     var currentLatLng = null;
     var nextLatLng = null;
     var animationStartTime = null;
+    var breadcrumbTrail = [];
+    var trailLine = L.polyline(breadcrumbTrail, {color: 'blue', weight: 3}).addTo(mymap);
 
     function getBusLocation() {
         fetch('/get_locations')
@@ -45,21 +108,39 @@
                     const newLatLng = new L.LatLng(busLocationData.lat, busLocationData.lon);
 
                     if (busMarker) {
-                        // If the location has changed, start a new smooth animation
                         if (!currentLatLng || !currentLatLng.equals(newLatLng)) {
                             currentLatLng = busMarker.getLatLng();
                             nextLatLng = newLatLng;
-                            animationStartTime = performance.now(); // Start the timer
-                            requestAnimationFrame(animateBus); // Start the animation loop
+                            
+                            var heading = L.latLng(currentLatLng).bearingTo(L.latLng(nextLatLng));
+                            busMarker.setRotationAngle(heading);
+                            
+                            animationStartTime = performance.now();
+                            requestAnimationFrame(animateBus);
                         }
                     } else {
-                        // First time, just place the marker
-                        busMarker = L.marker(newLatLng).addTo(mymap)
-                            .bindPopup(busLocationData.busName + " is here!")
+                        busMarker = L.marker(newLatLng, {icon: busIcon}).addTo(mymap)
+                            .bindPopup(`<b>${busLocationData.busName}</b><br>Next Stop: ${busLocationData.nextStop}<br>ETA: ${busLocationData.eta} min`)
                             .openPopup();
-                        mymap.setView(newLatLng, mymap.getZoom());
+                        mymap.setView(newLatLng, 15);
                         currentLatLng = newLatLng;
                     }
+                    
+                    // Update the ETA Dashboard
+                    document.getElementById('eta-dashboard').style.display = 'block';
+                    document.getElementById('next-stop-name').innerText = busLocationData.nextStop;
+                    document.getElementById('eta-value').innerText = busLocationData.eta;
+                    
+                    // Add to breadcrumb trail
+                    breadcrumbTrail.push([newLatLng.lat, newLatLng.lng]);
+                    trailLine.setLatLngs(breadcrumbTrail);
+
+                    // Update pulsing icon
+                    Object.values(stopMarkers).forEach(marker => marker.getElement().classList.remove('pulsing-icon'));
+                    if(stopMarkers[busLocationData.nextStop]) {
+                        stopMarkers[busLocationData.nextStop].getElement().classList.add('pulsing-icon');
+                    }
+                    
                 }
             })
             .catch(error => console.error('Error fetching location:', error));
@@ -69,27 +150,36 @@
         if (!animationStartTime) animationStartTime = timestamp;
 
         const elapsedTime = timestamp - animationStartTime;
-        const animationDuration = 5000; // 5 seconds in milliseconds
+        const animationDuration = 1000;
 
-        // Calculate the progress of the animation (0 to 1)
         const progress = Math.min(elapsedTime / animationDuration, 1);
 
-        // Interpolate the latitude and longitude
         const newLat = currentLatLng.lat + (nextLatLng.lat - currentLatLng.lat) * progress;
         const newLng = currentLatLng.lng + (nextLatLng.lng - currentLatLng.lng) * progress;
 
         busMarker.setLatLng(new L.LatLng(newLat, newLng));
 
-        // If animation is not complete, request the next frame
         if (progress < 1) {
             requestAnimationFrame(animateBus);
         }
     }
 
-    // Check for new bus location every 5 seconds
-    setInterval(getBusLocation, 5000);
+    L.LatLng.prototype.bearingTo = function(otherLatLng) {
+        var fromLat = this.lat * Math.PI / 180;
+        var fromLng = this.lng * Math.PI / 180;
+        var toLat = otherLatLng.lat * Math.PI / 180;
+        var toLng = otherLatLng.lng * Math.PI / 180;
 
-    // Code for the "Find My Bus" button
+        var dLng = toLng - fromLng;
+        var y = Math.sin(dLng) * Math.cos(toLat);
+        var x = Math.cos(fromLat) * Math.sin(toLat) - Math.sin(fromLat) * Math.cos(toLat) * Math.cos(dLng);
+
+        var bearing = Math.atan2(y, x);
+        return bearing * 180 / Math.PI;
+    };
+
+    setInterval(getBusLocation, 1000);
+
     document.getElementById('find-bus-btn').addEventListener('click', function() {
         fetch('/get_locations')
             .then(response => response.json())
