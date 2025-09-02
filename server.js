@@ -8,11 +8,11 @@ app.use(bodyParser.json());
 const busLocations = {};
 
 app.post('/update_location', (req, res) => {
-  const { busId, lat, lon, busName } = req.body;
+  const { busId, lat, lon, busName, nextStop, distanceToNextStop, eta } = req.body;
   console.log(`Received location for ${busId}: Lat ${lat}, Lon ${lon}`);
   
   if (busId && lat && lon) {
-    busLocations[busId] = { lat, lon, busName, timestamp: Date.now() };
+    busLocations[busId] = { lat, lon, busName, nextStop, distanceToNextStop, eta, timestamp: Date.now() };
     res.status(200).send({ message: 'Location updated successfully!' });
   } else {
     res.status(400).send({ message: 'Invalid data' });
